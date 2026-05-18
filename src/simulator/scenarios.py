@@ -1,0 +1,143 @@
+"""Named scenarios — each function returns a `Scenario` with known ground truth.
+
+Phase 1 ships `clean_lift` only. Subsequent phases add novelty / SRM / Simpson's /
+guardrail / heterogeneous / aa_drift, each planting a specific failure mode that
+the downstream diagnostics are then required to detect.
+
+Note: the in-scenario assignment helper below is a *placeholder* Bernoulli draw.
+Phase 2 replaces it with deterministic hash-mod bucketing from
+`src.assignment.bucketing`, at which point this module imports from there.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import numpy as np
+import pandas as pd
+
+from .events import TreatmentEffect, generate_events
+from .users import generate_users
+
+
+DEFAULT_DB_PATH = Path("data") / "warehouse.duckdb"
+
+
+@dataclass
+class Scenario:
+    name: str
+    users: pd.DataFrame
+    events: pd.DataFrame
+    exposures: pd.DataFrame
+    ground_truth: dict[str, Any] = field(default_factory=dict)
+
+
+def _placeholder_assignment(
+    users: pd.DataFrame,
+    experiment_id: str,
+    experiment_start: pd.Timestamp,
+    treatment_ratio: float = 0.5,
+    seed: int = 99,
+) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    n = len(users)
+    is_treatment = rng.random(n) < treatment_ratio
+    variants = np.where(is_treatment, "treatment", "control")
+    return pd.DataFrame(
+        {
+            "user_id": users["user_id"].to_numpy(),
+            "experiment_id": experiment_id,
+            "variant": variants,
+            "exposed_at": pd.Timestamp(experiment_start),
+        }
+    )
+
+
+def clean_lift(
+    n_users: int = 10_000,
+    experiment_days: int = 28,
+    true_lift: float = 0.05,
+    experiment_start: pd.Timestamp = pd.Timestamp("2026-01-01"),
+    seed: int = 42,
+) -> Scenario:
+    """Variant truly +`true_lift` relative conversion, uniform across segments.
+
+    No SRM, no novelty, no segment heterogeneity, no guardrail violation. This
+    is the baseline scenario that every downstream method must handle cleanly.
+    """
+    experiment_id = "exp_clean_lift"
+    users = generate_users(n_users, experiment_start=experiment_start, seed=seed)
+    exposures = _placeholder_assignment(
+        users, experiment_id, experiment_start, treatment_ratio=0.5, seed=seed + 1
+    )
+    effects = {
+        "control": TreatmentEffect(),
+        "treatment": TreatmentEffect(conversion_lift=true_lift),
+    }
+    events = generate_events(
+        users, exposures, experiment_start, experiment_days, effects, seed=seed + 2
+    )
+    ground_truth = {
+        "scenario": "clean_lift",
+        "experiment_id": experiment_id,
+        "true_lift_relative": true_lift,
+        "true_assignment_ratio": 0.5,
+        "primary_metric": "conversion_rate",
+        "experiment_start": pd.Timestamp(experiment_start),
+        "experiment_days": experiment_days,
+    }
+    return Scenario(
+        name="clean_lift",
+        users=users,
+        events=events,
+        exposures=exposures,
+        ground_truth=ground_truth,
+    )
+
+
+def write_to_duckdb(
+    scenario: Scenario,
+    db_path: str | Path = DEFAULT_DB_PATH,
+) -> Path:
+    """Replace `users`, `events`, `exposures` tables in DuckDB with scenario data.
+
+    Phase 1 keeps one scenario in the warehouse at a time. When scenarios
+    multiply (Phase 1.x), this will be extended to namespace by scenario.
+    """
+    db_path = Path(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    users_df = scenario.users  # noqa: F841 — referenced by DuckDB replacement scan
+    events_df = scenario.events  # noqa: F841
+    exposures_df = scenario.exposures  # noqa: F841
+    con = duckdb.connect(str(db_path))
+    try:
+        con.execute("CREATE OR REPLACE TABLE users AS SELECT * FROM users_df")
+        con.execute("CREATE OR REPLACE TABLE events AS SELECT * FROM events_df")
+        con.execute("CREATE OR REPLACE TABLE exposures AS SELECT * FROM exposures_df")
+    finally:
+        con.close()
+    return db_path
+
+
+def _summary(scenario: Scenario) -> str:
+    e = scenario.events
+    n_sessions = int((e["event_type"] == "session").sum())
+    n_conv = int((e["event_type"] == "conversion").sum())
+    by_var = (
+        scenario.exposures["variant"].value_counts().rename_axis("variant").to_dict()
+    )
+    return (
+        f"scenario={scenario.name} users={len(scenario.users):,} "
+        f"sessions={n_sessions:,} conversions={n_conv:,} "
+        f"variants={by_var}"
+    )
+
+
+if __name__ == "__main__":
+    s = clean_lift()
+    path = write_to_duckdb(s)
+    print(_summary(s))
+    print(f"wrote -> {path}")

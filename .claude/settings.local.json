@@ -14,7 +14,10 @@
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv init --bare --no-readme --vcs none --name experiment-platform --python 3.11 --author-from none)",
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv add duckdb dbt-duckdb scipy statsmodels pandas numpy streamlit econml)",
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv add --dev pytest)",
-      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest)"
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest -v)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python -m src.simulator.scenarios)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python scripts/inspect_warehouse.py)"
     ]
   }
 }
