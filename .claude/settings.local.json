@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where uv *)",
+      "Bash(uv --version)",
+      "PowerShell(python --version 2>&1)",
+      "PowerShell(py --version 2>&1)",
+      "PowerShell(pip --version 2>&1)",
+      "PowerShell(powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\")",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv --version)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv python install 3.11)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv init --help 2>&1 | Select-String -Pattern \"bare|app|lib|package|no-readme|no-workspace\" -SimpleMatch)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv init --help)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv init --bare --no-readme --vcs none --name experiment-platform --python 3.11 --author-from none)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv add duckdb dbt-duckdb scipy statsmodels pandas numpy streamlit econml)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv add --dev pytest)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest)"
+    ]
+  }
+}

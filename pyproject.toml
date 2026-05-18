@@ -1,0 +1,19 @@
+[project]
+name = "experiment-platform"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "dbt-duckdb>=1.10.1",
+    "duckdb>=1.5.2",
+    "econml>=0.16.0",
+    "numpy>=2.4.5",
+    "pandas>=3.0.3",
+    "scipy>=1.17.1",
+    "statsmodels>=0.14.6",
+    "streamlit>=1.57.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
