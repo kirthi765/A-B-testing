@@ -17,7 +17,9 @@
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest)",
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run pytest -v)",
       "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python -m src.simulator.scenarios)",
-      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python scripts/inspect_warehouse.py)"
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python scripts/inspect_warehouse.py)",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python -c \"from src.assignment.bucketing import user_bucket; print\\(user_bucket\\('u_0000001', 'exp_clean_lift'\\)\\)\")",
+      "PowerShell($env:Path = \"$env:USERPROFILE\\\\.local\\\\bin;$env:Path\"; uv run python -m src.simulator.scenarios; uv run python scripts/inspect_warehouse.py)"
     ]
   }
 }

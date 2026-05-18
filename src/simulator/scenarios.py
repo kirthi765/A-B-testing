@@ -4,9 +4,9 @@ Phase 1 ships `clean_lift` only. Subsequent phases add novelty / SRM / Simpson's
 guardrail / heterogeneous / aa_drift, each planting a specific failure mode that
 the downstream diagnostics are then required to detect.
 
-Note: the in-scenario assignment helper below is a *placeholder* Bernoulli draw.
-Phase 2 replaces it with deterministic hash-mod bucketing from
-`src.assignment.bucketing`, at which point this module imports from there.
+Assignment is deterministic hash-mod bucketing via `src.assignment.bucketing`
+(see Phase 2). Scenarios that plant assignment-side bugs (e.g. SRM) can pass
+non-uniform `weights` to bias the split.
 """
 
 from __future__ import annotations
@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
-import numpy as np
 import pandas as pd
+
+from src.assignment.bucketing import make_exposures
 
 from .events import TreatmentEffect, generate_events
 from .users import generate_users
@@ -35,27 +36,6 @@ class Scenario:
     ground_truth: dict[str, Any] = field(default_factory=dict)
 
 
-def _placeholder_assignment(
-    users: pd.DataFrame,
-    experiment_id: str,
-    experiment_start: pd.Timestamp,
-    treatment_ratio: float = 0.5,
-    seed: int = 99,
-) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    n = len(users)
-    is_treatment = rng.random(n) < treatment_ratio
-    variants = np.where(is_treatment, "treatment", "control")
-    return pd.DataFrame(
-        {
-            "user_id": users["user_id"].to_numpy(),
-            "experiment_id": experiment_id,
-            "variant": variants,
-            "exposed_at": pd.Timestamp(experiment_start),
-        }
-    )
-
-
 def clean_lift(
     n_users: int = 10_000,
     experiment_days: int = 28,
@@ -70,8 +50,12 @@ def clean_lift(
     """
     experiment_id = "exp_clean_lift"
     users = generate_users(n_users, experiment_start=experiment_start, seed=seed)
-    exposures = _placeholder_assignment(
-        users, experiment_id, experiment_start, treatment_ratio=0.5, seed=seed + 1
+    exposures = make_exposures(
+        user_ids=users["user_id"].tolist(),
+        experiment_id=experiment_id,
+        variants=("control", "treatment"),
+        weights=(0.5, 0.5),
+        exposed_at=experiment_start,
     )
     effects = {
         "control": TreatmentEffect(),
