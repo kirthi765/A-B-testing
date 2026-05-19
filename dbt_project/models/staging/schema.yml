@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: stg_exposures
+    description: "Deduped first exposure per (user_id, experiment_id)."
+    columns:
+      - name: user_id
+        tests: [not_null]
+      - name: experiment_id
+        tests: [not_null]
+      - name: variant
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['control', 'treatment']
+      - name: exposed_at
+        tests: [not_null]
+
+  - name: stg_events
+    description: "Post-exposure events, stamped with the user's variant. One row per (event, experiment)."
+    columns:
+      - name: event_id
+        tests: [not_null]
+      - name: user_id
+        tests: [not_null]
+      - name: experiment_id
+        tests: [not_null]
+      - name: variant
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['control', 'treatment']
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: ['session', 'conversion']

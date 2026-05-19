@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: fct_experiment_metrics
+    description: "One row per (experiment_id, variant, user_id) with primary metric (conversion) and guardrails (latency)."
+    columns:
+      - name: user_id
+        tests: [not_null]
+      - name: experiment_id
+        tests: [not_null]
+      - name: variant
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['control', 'treatment']
+      - name: segment
+        tests:
+          - accepted_values:
+              values: ['power_user', 'casual', 'new_signup', 'enterprise']
+      - name: n_sessions
+        tests: [not_null]
+      - name: n_conversions
+        tests: [not_null]
+
+  - name: fct_experiment_daily
+    description: "Per (experiment, variant, day) roll-up. Powers novelty / time-effect plots."
+    columns:
+      - name: experiment_id
+        tests: [not_null]
+      - name: variant
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['control', 'treatment']
+      - name: event_date
+        tests: [not_null]

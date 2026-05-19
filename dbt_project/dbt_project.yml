@@ -1,0 +1,19 @@
+name: 'experiment_platform'
+version: '0.1.0'
+config-version: 2
+
+profile: 'experiment_platform'
+
+model-paths: ["models"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  experiment_platform:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
