@@ -82,6 +82,64 @@ def clean_lift(
     )
 
 
+def heterogeneous(
+    n_users: int = 10_000,
+    experiment_days: int = 28,
+    experiment_start: pd.Timestamp = pd.Timestamp("2026-01-01"),
+    segment_lifts: dict[str, float] | None = None,
+    seed: int = 42,
+) -> Scenario:
+    """Variant lift varies sharply by segment — designed to fool an aggregate test.
+
+    Default lifts: power_user +20%, casual -5%, new_signup +10%, enterprise -2%.
+    The aggregate effect is muddy (a mix of wins and losses weighted by segment
+    population), but the HTE estimator should still recover the per-segment
+    direction and rank-order.
+    """
+    if segment_lifts is None:
+        segment_lifts = {
+            "power_user": 0.20,
+            "casual": -0.05,
+            "new_signup": 0.10,
+            "enterprise": -0.02,
+        }
+    experiment_id = "exp_heterogeneous"
+    users = generate_users(n_users, experiment_start=experiment_start, seed=seed)
+    exposures = make_exposures(
+        user_ids=users["user_id"].tolist(),
+        experiment_id=experiment_id,
+        variants=("control", "treatment"),
+        weights=(0.5, 0.5),
+        exposed_at=experiment_start,
+    )
+    effects = {
+        "control": TreatmentEffect(),
+        "treatment": TreatmentEffect(
+            conversion_lift=0.0,
+            conversion_lift_by_segment=segment_lifts,
+        ),
+    }
+    events = generate_events(
+        users, exposures, experiment_start, experiment_days, effects, seed=seed + 2
+    )
+    ground_truth = {
+        "scenario": "heterogeneous",
+        "experiment_id": experiment_id,
+        "true_lift_relative_by_segment": dict(segment_lifts),
+        "true_assignment_ratio": 0.5,
+        "primary_metric": "conversion_rate",
+        "experiment_start": pd.Timestamp(experiment_start),
+        "experiment_days": experiment_days,
+    }
+    return Scenario(
+        name="heterogeneous",
+        users=users,
+        events=events,
+        exposures=exposures,
+        ground_truth=ground_truth,
+    )
+
+
 def write_to_duckdb(
     scenario: Scenario,
     db_path: str | Path = DEFAULT_DB_PATH,

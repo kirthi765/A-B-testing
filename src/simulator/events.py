@@ -24,10 +24,16 @@ class TreatmentEffect:
 
     `conversion_lift` is multiplicative on the per-segment base rate (0.05 = +5%).
     `latency_lift_ms` is additive on each sampled latency (in milliseconds).
+
+    `conversion_lift_by_segment` / `latency_lift_by_segment_ms` optionally
+    override the scalar values for individual segments — required for the
+    heterogeneous scenario the HTE module is built to recover.
     """
 
     conversion_lift: float = 0.0
     latency_lift_ms: float = 0.0
+    conversion_lift_by_segment: dict[str, float] | None = None
+    latency_lift_by_segment_ms: dict[str, float] | None = None
 
 
 def _day_of_week_multiplier(dates: pd.DatetimeIndex) -> np.ndarray:
@@ -41,6 +47,35 @@ def _hour_density(n_hours: int = 24) -> np.ndarray:
     hours = np.arange(n_hours)
     raw = 1.0 + 0.5 * np.sin(2 * np.pi * (hours - 8) / 24)
     return raw / raw.sum()
+
+
+def _resolve_lift_arrays(
+    u: pd.DataFrame,
+    treatment_effects: dict[str, TreatmentEffect],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized per-row lookup of (conversion_lift, latency_lift_ms) by (variant, segment).
+
+    Default to the variant's scalar lift; if the variant defines a
+    `*_by_segment` override and the user's segment is in it, that wins.
+    """
+    n = len(u)
+    conv_lift = np.zeros(n, dtype=float)
+    lat_lift = np.zeros(n, dtype=float)
+    variants = u["variant"].to_numpy()
+    segments = u["segment"].to_numpy()
+    for variant, effect in treatment_effects.items():
+        var_mask = variants == variant
+        if not var_mask.any():
+            continue
+        conv_lift[var_mask] = effect.conversion_lift
+        lat_lift[var_mask] = effect.latency_lift_ms
+        if effect.conversion_lift_by_segment:
+            for seg, lift in effect.conversion_lift_by_segment.items():
+                conv_lift[var_mask & (segments == seg)] = lift
+        if effect.latency_lift_by_segment_ms:
+            for seg, lift in effect.latency_lift_by_segment_ms.items():
+                lat_lift[var_mask & (segments == seg)] = lift
+    return conv_lift, lat_lift
 
 
 def generate_events(
@@ -76,12 +111,7 @@ def generate_events(
     base_lambda = u["segment"].map(lambda s: SEGMENTS[s].sessions_per_day).to_numpy()
     log_mean = u["segment"].map(lambda s: SEGMENTS[s].latency_log_mean).to_numpy()
     log_sigma = u["segment"].map(lambda s: SEGMENTS[s].latency_log_sigma).to_numpy()
-    conv_lift = u["variant"].map(
-        lambda v: treatment_effects.get(v, TreatmentEffect()).conversion_lift
-    ).to_numpy()
-    lat_lift = u["variant"].map(
-        lambda v: treatment_effects.get(v, TreatmentEffect()).latency_lift_ms
-    ).to_numpy()
+    conv_lift, lat_lift = _resolve_lift_arrays(u, treatment_effects)
     user_ids_arr = u["user_id"].to_numpy()
 
     p_conv_per_user = np.clip(base_conv * (1.0 + conv_lift), 0.0, 0.99)
