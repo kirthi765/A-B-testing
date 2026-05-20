@@ -34,6 +34,10 @@ class TreatmentEffect:
     latency_lift_ms: float = 0.0
     conversion_lift_by_segment: dict[str, float] | None = None
     latency_lift_by_segment_ms: dict[str, float] | None = None
+    # Day-index → scalar in [0, 1+] that multiplies the (already-resolved)
+    # conversion_lift on that day. Required for the novelty scenario, where
+    # the lift decays from 1.0 on day 0 to 0.0 by the last day.
+    daily_lift_multiplier: list[float] | None = None
 
 
 def _day_of_week_multiplier(dates: pd.DatetimeIndex) -> np.ndarray:
@@ -52,15 +56,20 @@ def _hour_density(n_hours: int = 24) -> np.ndarray:
 def _resolve_lift_arrays(
     u: pd.DataFrame,
     treatment_effects: dict[str, TreatmentEffect],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorized per-row lookup of (conversion_lift, latency_lift_ms) by (variant, segment).
+    n_days: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Vectorized per-row lookup of (conversion_lift, latency_lift_ms, daily_mult).
 
-    Default to the variant's scalar lift; if the variant defines a
-    `*_by_segment` override and the user's segment is in it, that wins.
+    `conv_lift` and `lat_lift` are shape (n_users,) — per-(variant, segment).
+    `daily_mult` is shape (n_users, n_days) — defaults to ones; if a variant
+    defines `daily_lift_multiplier`, its row of `daily_mult` is set to that
+    array. Used to scale the conversion lift per (user, day) for novelty-style
+    effects without changing the random-state consumption order.
     """
     n = len(u)
     conv_lift = np.zeros(n, dtype=float)
     lat_lift = np.zeros(n, dtype=float)
+    daily_mult = np.ones((n, n_days), dtype=float)
     variants = u["variant"].to_numpy()
     segments = u["segment"].to_numpy()
     for variant, effect in treatment_effects.items():
@@ -75,7 +84,15 @@ def _resolve_lift_arrays(
         if effect.latency_lift_by_segment_ms:
             for seg, lift in effect.latency_lift_by_segment_ms.items():
                 lat_lift[var_mask & (segments == seg)] = lift
-    return conv_lift, lat_lift
+        if effect.daily_lift_multiplier is not None:
+            mults = np.asarray(effect.daily_lift_multiplier, dtype=float)
+            if mults.shape != (n_days,):
+                raise ValueError(
+                    f"daily_lift_multiplier for variant {variant!r} must have "
+                    f"length {n_days}, got {len(mults)}"
+                )
+            daily_mult[var_mask, :] = mults[None, :]
+    return conv_lift, lat_lift, daily_mult
 
 
 def generate_events(
@@ -111,10 +128,15 @@ def generate_events(
     base_lambda = u["segment"].map(lambda s: SEGMENTS[s].sessions_per_day).to_numpy()
     log_mean = u["segment"].map(lambda s: SEGMENTS[s].latency_log_mean).to_numpy()
     log_sigma = u["segment"].map(lambda s: SEGMENTS[s].latency_log_sigma).to_numpy()
-    conv_lift, lat_lift = _resolve_lift_arrays(u, treatment_effects)
+    conv_lift, lat_lift, daily_mult = _resolve_lift_arrays(
+        u, treatment_effects, n_days=experiment_days
+    )
     user_ids_arr = u["user_id"].to_numpy()
 
-    p_conv_per_user = np.clip(base_conv * (1.0 + conv_lift), 0.0, 0.99)
+    # Per (user, day) effective lift. When no daily multiplier is set this is
+    # exactly `conv_lift[user_idx]` per session — preserving determinism for
+    # the existing scenarios that don't use it.
+    effective_lift_ud = conv_lift[:, None] * daily_mult  # (n_users, n_days)
 
     lambdas = base_lambda[:, None] * dow_mult[None, :]  # (n_users, n_days)
     counts = rng.poisson(lambdas)  # (n_users, n_days)
@@ -141,7 +163,9 @@ def generate_events(
     )
 
     session_user_ids = user_ids_arr[user_idx]
-    converted = rng.random(total_sessions) < p_conv_per_user[user_idx]
+    session_lift = effective_lift_ud[user_idx, day_idx]
+    p_conv_per_session = np.clip(base_conv[user_idx] * (1.0 + session_lift), 0.0, 0.99)
+    converted = rng.random(total_sessions) < p_conv_per_session
     latencies = rng.lognormal(log_mean[user_idx], log_sigma[user_idx]) + lat_lift[user_idx]
 
     session_df = pd.DataFrame(

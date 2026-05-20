@@ -132,11 +132,10 @@ def build_user_level_dataset(
     Designed for the HTE pipeline — the caller picks which outcome to use
     (`n_conversions` for count-scale CATE, `converted` for binary CATE).
     """
-    n_sessions = (
-        events[events["event_type"] == "session"]
-        .groupby("user_id")
-        .size()
-        .rename("n_sessions")
+    sessions_only = events[events["event_type"] == "session"]
+    n_sessions = sessions_only.groupby("user_id").size().rename("n_sessions")
+    mean_latency = (
+        sessions_only.groupby("user_id")["value"].mean().rename("mean_latency_ms")
     )
     n_conversions = (
         events[events["event_type"] == "conversion"]
@@ -148,10 +147,16 @@ def build_user_level_dataset(
         users.merge(exposures[["user_id", "variant"]], on="user_id", how="inner")
         .merge(n_sessions, left_on="user_id", right_index=True, how="left")
         .merge(n_conversions, left_on="user_id", right_index=True, how="left")
+        .merge(mean_latency, left_on="user_id", right_index=True, how="left")
         .fillna({"n_sessions": 0, "n_conversions": 0})
     )
     df["treatment"] = (df["variant"] == "treatment").astype(int)
     df["converted"] = (df["n_conversions"] > 0).astype(int)
+    # Per-user session-level conversion rate. NaN for users with 0 sessions —
+    # downstream tests that need it should `.dropna(subset=["conversion_rate"])`.
+    df["conversion_rate"] = df["n_conversions"] / df["n_sessions"].where(
+        df["n_sessions"] > 0
+    )
     df["n_sessions"] = df["n_sessions"].astype(int)
     df["n_conversions"] = df["n_conversions"].astype(int)
     return df
